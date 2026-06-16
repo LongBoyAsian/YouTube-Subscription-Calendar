@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Subscription Calendar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="header-titles">
+            <h1>YouTube Subscription Calendar</h1>
+            <div class="month-navigation">
+                <button id="prev-month-btn" title="Previous Month">&lt;</button>
+                <h2 id="month-year"></h2>
+                <button id="next-month-btn" title="Next Month">&gt;</button>
+                <button id="today-btn" title="Go to Current Month">Today</button>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="dark-mode-container">
+                <span class="dark-mode-label">Dark Mode</span>
+                <label class="switch" title="Toggle Dark Mode">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="legend">
+                <span class="legend-item video">Standard Video</span>
+                <span class="legend-item short">YouTube Short</span>
+            </div>
+        </div>
+    </header>
+    <main>
+        <div id="calendar-header" class="calendar-grid">
+            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+        </div>
+        <div id="calendar-body" class="calendar-grid">
+            <!-- Calendar days and videos will be injected here via JavaScript -->
+        </div>
+    </main>
+    
+    <script src="script.js"></script>
+</body>
+</html>
