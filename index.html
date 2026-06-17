@@ -10,6 +10,7 @@
     <header>
         <div class="header-titles">
             <h1>YouTube Subscription Calendar</h1>
+            <button id="auth-btn" style="margin-top: 10px; padding: 5px 10px; cursor: pointer;">Log In with YouTube</button>
             <div class="month-navigation">
                 <button id="prev-month-btn" title="Previous Month">&lt;</button>
                 <h2 id="month-year"></h2>
@@ -26,12 +27,16 @@
                 </label>
             </div>
             <div class="legend">
-                <span class="legend-item video">Standard Video</span>
-                <span class="legend-item short">YouTube Short</span>
+                <span class="legend-item video" data-type="video" title="Toggle Standard Videos">Standard Video</span>
+                <span class="legend-item short" data-type="short" title="Toggle YouTube Shorts">YouTube Short</span>
+                <span class="legend-item community" data-type="community" title="Toggle Community Posts">Community Post</span>
             </div>
         </div>
     </header>
     <main>
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="Search videos by title or channel...">
+        </div>
         <div id="calendar-header" class="calendar-grid">
             <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
         </div>
@@ -40,6 +45,17 @@
         </div>
     </main>
     
+    <div id="modal-overlay" class="modal-overlay"></div>
+    <div id="details-modal" class="modal">
+        <button id="modal-close-btn" class="modal-close-btn" title="Close">&times;</button>
+        <div id="modal-content">
+            <!-- Details will be injected here -->
+        </div>
+    </div>
+    
+    <!-- Google API Libraries -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
