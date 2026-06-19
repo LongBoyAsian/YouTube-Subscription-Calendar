@@ -10,7 +10,8 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-top: 10px;
+    margin-bottom: 40px;
 }
 
 .header-titles h1 {
@@ -22,14 +23,15 @@ header {
     display: flex;
     align-items: center;
     gap: 15px;
-    margin-top: 5px;
+    margin-top: 15px;
 }
 
 #month-year {
     margin: 0;
     color: #666;
     font-weight: 500;
-    width: 180px; /* Prevents layout shift when month name changes */
+    width: 180px;
+    /* Prevents layout shift when month name changes */
     text-align: center;
 }
 
@@ -40,9 +42,27 @@ header {
     width: 32px;
     height: 32px;
     cursor: pointer;
-    font-size: 1.2em;
+    font-size: 0.9em;
     color: #4a5568;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, color 0.2s;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#prev-month-btn,
+#next-month-btn {
+    background: none;
+    border: none;
+    font-size: 1.2em;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+}
+
+#prev-month-btn:hover,
+#next-month-btn:hover {
+    background-color: #e2e8f0;
 }
 
 .month-navigation button:hover {
@@ -55,6 +75,39 @@ header {
     font-size: 0.9em;
     padding: 0 12px;
     font-weight: 500;
+}
+
+#force-refresh-btn {
+    display: none;
+    /* Hidden by default, shown via JS when logged in */
+    border-radius: 6px;
+    width: auto;
+    font-size: 0.9em;
+    padding: 0 12px;
+    font-weight: 500;
+}
+
+
+#auth-btn {
+    background-color: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #4a5568;
+    transition: background-color 0.2s, opacity 0.2s;
+    font-size: 0.9em;
+    padding: 6px 12px;
+    font-weight: 500;
+    margin-top: 15px;
+}
+
+#auth-btn:hover:not(:disabled) {
+    background-color: #cbd5e1;
+}
+
+#auth-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .header-right {
@@ -111,11 +164,11 @@ header {
     border-radius: 50%;
 }
 
-input:checked + .slider {
+input:checked+.slider {
     background-color: #3b82f6;
 }
 
-input:checked + .slider:before {
+input:checked+.slider:before {
     transform: translateX(22px);
 }
 
@@ -185,8 +238,9 @@ input:checked + .slider:before {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    min-width: 0; /* Allows the flex container to shrink below its content's intrinsic width */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    min-width: 0;
+    /* Allows the flex container to shrink below its content's intrinsic width */
     cursor: pointer;
     transition: background-color 0.2s, box-shadow 0.2s;
 }
@@ -211,21 +265,48 @@ input:checked + .slider:before {
 }
 
 .yt-item {
-    display: block;
-    box-sizing: border-box; /* Ensures padding doesn't push the item out of its container */
-    padding: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-sizing: border-box;
+    /* Ensures padding doesn't push the item out of its container */
+    padding: 4px;
     border-radius: 4px;
     font-size: 0.8em;
     color: white;
     text-decoration: none;
     overflow: hidden;
+    transition: opacity 0.2s;
+}
+
+.yt-item-thumbnail {
+    width: 48px;
+    height: 27px;
+    object-fit: cover;
+    border-radius: 2px;
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.1);
+    /* Placeholder color */
+}
+
+.yt-item-title {
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    transition: opacity 0.2s;
 }
 
 .yt-item:hover {
     opacity: 0.8;
+}
+
+.yt-item.watched,
+.modal-upload-item.watched {
+    opacity: 0.5;
+}
+
+.yt-item.watched:hover,
+.modal-upload-item.watched:hover {
+    opacity: 0.65;
 }
 
 .more-indicator {
@@ -245,7 +326,8 @@ input:checked + .slider:before {
     height: 100%;
     background: rgba(0, 0, 0, 0.6);
     z-index: 100;
-    display: none; /* Hidden by default */
+    display: none;
+    /* Hidden by default */
 }
 
 .modal {
@@ -256,11 +338,12 @@ input:checked + .slider:before {
     background: white;
     padding: 30px;
     border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
     z-index: 101;
     width: 90%;
     max-width: 500px;
-    display: none; /* Hidden by default */
+    display: none;
+    /* Hidden by default */
 }
 
 .modal-open .modal-overlay,
@@ -333,12 +416,43 @@ input:checked + .slider:before {
     gap: 10px;
     max-height: 60vh;
     overflow-y: auto;
+    padding-right: 10px;
+    scrollbar-gutter: stable;
 }
 
 .modal-upload-item {
     padding: 12px;
     border-radius: 6px;
     color: white;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+}
+
+.modal-thumbnail {
+    width: 120px;
+    height: 67px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.1);
+    /* Placeholder color */
+}
+
+.modal-item-details {
+    /* This div will just hold the text content */
+    min-width: 0;
+    /* Allows flex item to shrink and text to wrap if needed */
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.upload-time {
+    font-size: 0.85em;
+    opacity: 0.8;
+    margin-top: 2px;
 }
 
 .upload-type-badge {
@@ -348,10 +462,80 @@ input:checked + .slider:before {
     font-size: 0.75em;
 }
 
+/* Custom Scrollbar for Modal List */
+.modal-upload-list::-webkit-scrollbar {
+    width: 12px;
+}
+
+.modal-upload-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.modal-upload-list::-webkit-scrollbar-thumb {
+    background-color: #ccc;
+    border-radius: 10px;
+    border: 3px solid #fff;
+}
+
+.modal-upload-list::-webkit-scrollbar-thumb:hover {
+    background-color: #aaa;
+}
+
+/* Loading Spinner Styles */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 200;
+    display: none;
+    /* Hidden by default */
+    justify-content: center;
+    align-items: center;
+}
+
+.spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #3b82f6;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
 /* Color Coding */
-.video { background-color: #e62117; } /* YouTube Red */
-.short { background-color: #833ab4; } /* Purple for Shorts */
-.community { background-color: #10b981; } /* Green for Community Posts */
+.video {
+    background-color: #e62117;
+}
+
+/* YouTube Red */
+.short {
+    background-color: #833ab4;
+}
+
+/* Purple for Shorts */
+.livestream {
+    background-color: #29b6f6;
+}
+
+/* Light Blue for Livestreams */
+.community {
+    background-color: #10b981;
+}
+
+/* Green for Community Posts */
 
 /* Dark Mode Styles */
 body.dark-mode {
@@ -361,6 +545,10 @@ body.dark-mode {
 
 body.dark-mode .dark-mode-label {
     color: #e0e0e0;
+}
+
+body.dark-mode .slider {
+    background-color: #555;
 }
 
 body.dark-mode #month-year,
@@ -378,6 +566,26 @@ body.dark-mode .month-navigation button:hover {
     background-color: #444;
 }
 
+body.dark-mode #prev-month-btn,
+body.dark-mode #next-month-btn {
+    color: #aaa;
+}
+
+body.dark-mode #prev-month-btn:hover,
+body.dark-mode #next-month-btn:hover {
+    background-color: #2c2c2c;
+}
+
+body.dark-mode #auth-btn {
+    background-color: #2c2c2c;
+    border-color: #444;
+    color: #e0e0e0;
+}
+
+body.dark-mode #auth-btn:hover:not(:disabled) {
+    background-color: #444;
+}
+
 body.dark-mode #calendar-header div {
     background-color: #2c2c2c;
     color: #e0e0e0;
@@ -386,7 +594,7 @@ body.dark-mode #calendar-header div {
 body.dark-mode .day {
     background: #1e1e1e;
     border-color: #333;
-    box-shadow: 0 2px 4px rgba(255,255,255,0.02);
+    box-shadow: 0 2px 4px rgba(255, 255, 255, 0.02);
 }
 
 body.dark-mode .day:hover {
@@ -404,7 +612,7 @@ body.dark-mode .current-day .day-number {
 
 body.dark-mode .modal {
     background: #2c2c2c;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
 }
 
 body.dark-mode .modal-close-btn {
@@ -439,4 +647,22 @@ body.dark-mode #search-input {
 
 body.dark-mode #search-input::placeholder {
     color: #888;
+}
+
+body.dark-mode .modal-upload-list::-webkit-scrollbar-thumb {
+    background-color: #555;
+    border-color: #2c2c2c;
+}
+
+body.dark-mode .modal-upload-list::-webkit-scrollbar-thumb:hover {
+    background-color: #777;
+}
+
+body.dark-mode .loading-overlay {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+body.dark-mode .spinner {
+    border-color: #444;
+    border-top-color: #3b82f6;
 }

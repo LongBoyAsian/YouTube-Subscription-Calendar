@@ -1,21 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="A calendar view of recent uploads from your YouTube subscriptions. Filter by video type, search by channel or title, and track what you've watched.">
     <title>YouTube Subscription Calendar</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <header>
         <div class="header-titles">
             <h1>YouTube Subscription Calendar</h1>
-            <button id="auth-btn" style="margin-top: 10px; padding: 5px 10px; cursor: pointer;">Log In with YouTube</button>
+            <button id="auth-btn" disabled>Log In with YouTube</button>
             <div class="month-navigation">
-                <button id="prev-month-btn" title="Previous Month">&lt;</button>
+                <button id="prev-month-btn" title="Previous Month">◀</button>
                 <h2 id="month-year"></h2>
-                <button id="next-month-btn" title="Next Month">&gt;</button>
+                <button id="next-month-btn" title="Next Month">▶</button>
                 <button id="today-btn" title="Go to Current Month">Today</button>
+                <button id="force-refresh-btn" title="Bypass cache and fetch new data from YouTube">Refresh
+                    Feed</button>
             </div>
         </div>
         <div class="header-right">
@@ -28,8 +34,10 @@
             </div>
             <div class="legend">
                 <span class="legend-item video" data-type="video" title="Toggle Standard Videos">Standard Video</span>
+                <span class="legend-item livestream" data-type="livestream" title="Toggle Livestreams">Livestream</span>
                 <span class="legend-item short" data-type="short" title="Toggle YouTube Shorts">YouTube Short</span>
-                <span class="legend-item community" data-type="community" title="Toggle Community Posts">Community Post</span>
+                <span class="legend-item community" data-type="community" title="Toggle Community Posts">Community
+                    Post</span>
             </div>
         </div>
     </header>
@@ -38,13 +46,19 @@
             <input type="text" id="search-input" placeholder="Search videos by title or channel...">
         </div>
         <div id="calendar-header" class="calendar-grid">
-            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+            <div>Sun</div>
+            <div>Mon</div>
+            <div>Tue</div>
+            <div>Wed</div>
+            <div>Thu</div>
+            <div>Fri</div>
+            <div>Sat</div>
         </div>
         <div id="calendar-body" class="calendar-grid">
             <!-- Calendar days and videos will be injected here via JavaScript -->
         </div>
     </main>
-    
+
     <div id="modal-overlay" class="modal-overlay"></div>
     <div id="details-modal" class="modal">
         <button id="modal-close-btn" class="modal-close-btn" title="Close">&times;</button>
@@ -52,10 +66,24 @@
             <!-- Details will be injected here -->
         </div>
     </div>
-    
-    <!-- Google API Libraries -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://apis.google.com/js/api.js"></script>
+
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+    <noscript>
+        <p style="text-align:center; margin-top:40px; font-size:1.2em;">This application requires JavaScript to run.
+            Please enable JavaScript in your browser settings.</p>
+    </noscript>
+
+    <!-- App scripts must load before the async Google API scripts so that
+         gapiLoaded() and gisLoaded() callback functions are defined when
+         the Google libraries finish loading. -->
+    <script src="config.js"></script>
     <script src="script.js"></script>
+
+    <!-- Google API Libraries -->
+    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
 </body>
+
 </html>

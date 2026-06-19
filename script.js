@@ -1,61 +1,453 @@
+/**
+ * Escapes HTML special characters to prevent XSS when injecting API data via innerHTML.
+ * @param {string} str The untrusted string to escape.
+ * @returns {string} The escaped string safe for HTML insertion.
+ */
+function escapeHTML(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
 const calendarBody = document.getElementById('calendar-body');
 const prevMonthBtn = document.getElementById('prev-month-btn');
 const nextMonthBtn = document.getElementById('next-month-btn');
+const authBtn = document.getElementById('auth-btn');
 const todayBtn = document.getElementById('today-btn');
 const darkModeToggle = document.getElementById('dark-mode-toggle');
+const forceRefreshBtn = document.getElementById('force-refresh-btn');
 const searchInput = document.getElementById('search-input');
 const modal = document.getElementById('details-modal');
 const modalOverlay = document.getElementById('modal-overlay');
 const modalContent = document.getElementById('modal-content');
+const loadingOverlay = document.getElementById('loading-overlay');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 let currentDate = new Date();
 
-// Mock data simulating a response from the YouTube Data API
-const mockUploads = [
-    { id: 1, title: 'Building a Web App in 10 mins', channel: 'Code Ninja', date: 2, type: 'video' },
-    { id: 2, title: 'Funny Cats Compilation', channel: 'Meme Central', date: 2, type: 'short' },
-    { id: 3, title: 'Tech Review 2024', channel: 'Gadget Guru', date: 5, type: 'video' },
-    { id: 4, title: 'Quick React Tip #42', channel: 'Code Ninja', date: 7, type: 'short' },
-    { id: 5, title: 'Vlog: Day in the life of a dev', channel: 'Daily Vlogs', date: 14, type: 'video' },
-    { id: 6, title: 'Cooking pasta in 60 seconds', channel: 'Chef Mario', date: 14, type: 'short' },
-    { id: 7, title: 'Advanced CSS Animations', channel: 'Design Pro', date: 20, type: 'video' },
-    { id: 8, title: 'My Studio Setup', channel: 'Gadget Guru', date: 25, type: 'video' },
-    { id: 9, title: 'Poll: Next tutorial topic?', channel: 'Code Ninja', date: 22, type: 'community' }
-];
+let gapiInited = false;
+let gisInited = false;
+let tokenClient;
+let uploads = []; // This will hold the real data from the API
+let watchedIds;
+try {
+    // This is now wrapped in a try-catch to prevent errors from malformed data in localStorage
+    watchedIds = new Set(JSON.parse(localStorage.getItem('watchedVideoIds')) || []);
+} catch (e) {
+    console.error("Could not parse watchedVideoIds from localStorage. Resetting.", e);
+    watchedIds = new Set();
+}
+
+// The permissions your app is requesting
+const SCOPES = 'https://www.googleapis.com/auth/youtube.readonly';
+
+function gapiLoaded() {
+    console.log('DEBUG: gapiLoaded() called.');
+    gapi.load('client', initializeGapiClient);
+}
+
+function gisLoaded() {
+    console.log('DEBUG: gisLoaded() called.');
+    try {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES,
+            callback: handleTokenResponse, // Callback function to handle the token
+            error_callback: (error) => {
+                console.error('DEBUG: GIS Error Callback:', error);
+                // This can happen if 3rd-party cookies are blocked. The silent sign-in will fail.
+                // The 'prompt: none' request will then call the main `callback` with an error object.
+            }
+        });
+        gisInited = true;
+        console.log('DEBUG: GIS client initialized.');
+        checkAndInitializeAuth(); // Renamed to reflect its purpose better
+    } catch (error) {
+        console.error('DEBUG: Error initializing GIS client:', error);
+    }
+}
+
+async function initializeGapiClient() {
+    console.log('DEBUG: initializeGapiClient() called.');
+    try {
+        await gapi.client.init({
+            apiKey: API_KEY,
+            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'],
+        });
+        gapiInited = true;
+        console.log('DEBUG: GAPI client initialized.');
+        checkAndInitializeAuth(); // Renamed
+    } catch (error) {
+        console.error('DEBUG: Error initializing GAPI client:', error);
+    }
+}
+
+function handleAuthClick() {
+    if (gapi.client.getToken() === null) {
+        console.log('DEBUG: handleAuthClick() triggered. Requesting access token.');
+        // Prompt the user to select a Google Account and ask for consent to share their data
+        tokenClient.requestAccessToken({ prompt: 'consent select_account' });
+    } else {
+        // The user is already signed in and has given consent
+        console.log('User is already authenticated.');
+        // Optionally, you could add sign-out logic here
+    }
+}
+
+function handleSignoutClick() {
+    const token = gapi.client.getToken();
+    if (token !== null) {
+        google.accounts.oauth2.revoke(token.access_token, () => {
+            gapi.client.setToken(null);
+            localStorage.removeItem('youtube_access_token');
+            localStorage.removeItem('youtube_calendar_cache');
+            localStorage.removeItem('watchedVideoIds');
+            watchedIds.clear();
+            uploads = []; // Clear data on sign out
+            updateAuthUI();
+            renderCalendar(currentDate); // Re-render to clear view
+        });
+    }
+}
+
+function handleTokenResponse(tokenResponse) {
+    // The GIS library can return an error object to the callback.
+    if (tokenResponse && tokenResponse.error) {
+        console.error('DEBUG: Token response contained an error (likely silent sign-in failure):', tokenResponse.error);
+        updateAuthUI();
+        return;
+    }
+    // If we get here, sign-in was successful (either silent or manual).
+    gapi.client.setToken(tokenResponse);
+    localStorage.setItem('youtube_access_token', tokenResponse.access_token);
+    updateAuthUI();
+}
+
+let authSetupComplete = false; // New flag to ensure initial button setup runs only once
+
+function checkAndInitializeAuth() { // Renamed from initializeSession
+    // This function is called after each library loads.
+    // It will only run its logic once both are ready and it hasn't run before.
+    if (gapiInited && gisInited && !authSetupComplete) {
+        authSetupComplete = true;
+        console.log("DEBUG: Both GAPI and GIS are initialized. Performing initial auth setup.");
+
+        // Enable the button and set its initial click handler
+        authBtn.disabled = false;
+        authBtn.onclick = handleAuthClick; // Default to login handler
+        console.log('DEBUG: Auth button enabled and default handleAuthClick assigned.');
+
+        // Attempt to restore session from localStorage
+        const savedToken = localStorage.getItem('youtube_access_token');
+        if (savedToken) {
+            console.log("DEBUG: Found saved token, setting it in gapi.client.");
+            gapi.client.setToken({ access_token: savedToken });
+        }
+        updateAuthUI(); // Update UI based on current auth state (token might be null or restored)
+    }
+}
+
+function updateAuthUI() { // This function now primarily updates the button's text and handler based on current auth state
+    console.log('DEBUG: updateAuthUI() called.');
+    // Don't do anything until both libraries are loaded.
+    if (!authSetupComplete) { // Ensure initial setup has run
+        console.log('DEBUG: updateAuthUI: Initial auth setup not complete. Returning.');
+        return;
+    }
+
+    console.log('DEBUG: updateAuthUI: Initial auth setup complete. Updating button state.');
+    const token = gapi.client.getToken();
+    const isSignedIn = token !== null;
+
+    if (isSignedIn) {
+        authBtn.textContent = 'Log Out';
+        forceRefreshBtn.style.display = 'inline-block';
+        authBtn.onclick = handleSignoutClick;
+        console.log('DEBUG: UI updated to "Log Out" state.');
+
+        // Check for a fresh cache first
+        const cachedDataJSON = localStorage.getItem('youtube_calendar_cache');
+        try {
+            const CACHE_EXPIRATION_MINUTES = 15;
+            if (cachedDataJSON) {
+                const cache = JSON.parse(cachedDataJSON);
+                const cacheAgeMinutes = (new Date().getTime() - cache.timestamp) / 1000 / 60;
+
+                if (cacheAgeMinutes < CACHE_EXPIRATION_MINUTES) {
+                    console.log(`DEBUG: Found fresh cache (less than ${CACHE_EXPIRATION_MINUTES} minutes old). Loading from cache.`);
+                    loadingOverlay.style.display = 'flex';
+
+                    // JSON stringifies dates, so we need to convert them back to Date objects
+                    uploads = cache.uploads.map(upload => ({
+                        ...upload,
+                        publishedAt: new Date(upload.publishedAt)
+                    }));
+
+                    // Use a short timeout to allow the spinner to render before the main thread is blocked by rendering
+                    setTimeout(() => {
+                        renderCalendar(currentDate);
+                        loadingOverlay.style.display = 'none';
+                    }, 50);
+                    return; // We're done, no need to fetch from API
+                } else {
+                    console.log("DEBUG: Cache is stale, will fetch new data.");
+                }
+            }
+        } catch (e) {
+            console.error("Could not parse calendar cache from localStorage. Resetting.", e);
+            localStorage.removeItem('youtube_calendar_cache');
+        }
+
+        // If we reach here, it means there's no fresh cache, so fetch from API.
+        fetchSubscriptions();
+    } else {
+        authBtn.textContent = 'Log In with YouTube';
+        forceRefreshBtn.style.display = 'none';
+        authBtn.onclick = handleAuthClick;
+        console.log('DEBUG: UI updated to "Log In" state.');
+    }
+}
+
+async function fetchSubscriptions() {
+    loadingOverlay.style.display = 'flex';
+
+    try {
+        let allSubscriptions = [];
+        let nextPageToken = '';
+
+        // We use a do...while loop because users might have more than 50 subscriptions.
+        // The API returns up to 50 at a time, plus a token to get the next page.
+        do {
+            const response = await gapi.client.youtube.subscriptions.list({
+                part: 'snippet',
+                mine: true,
+                maxResults: 50,
+                pageToken: nextPageToken
+            });
+
+            const items = response.result.items;
+            if (items) {
+                allSubscriptions = allSubscriptions.concat(items);
+            }
+
+            nextPageToken = response.result.nextPageToken;
+        } while (nextPageToken);
+
+        console.log('Successfully fetched subscriptions:', allSubscriptions);
+
+        // Extract the channel IDs, as we'll need these to fetch the videos later
+        const channelIds = allSubscriptions.map(sub => sub.snippet.resourceId.channelId);
+
+        // Now fetch the recent uploads for these channels
+        await fetchUploadsForChannels(channelIds);
+
+    } catch (error) {
+        handleApiError(error, 'Failed to fetch subscriptions.');
+    }
+}
+
+function handleApiError(error, userMessage) {
+    loadingOverlay.style.display = 'none'; // Hide spinner on any API error
+
+    console.error(userMessage, error);
+    const apiError = error.result?.error;
+
+    // Check if the error is a 401 Unauthorized, indicating an expired token
+    if (apiError && apiError.code === 401) {
+        console.log("DEBUG: Token expired or invalid (401). Clearing session.");
+        localStorage.removeItem('youtube_access_token');
+        gapi.client.setToken(null); // Clear the bad token from the GAPI client
+        alert("Your session has expired. Please log in again.");
+        updateAuthUI(); // Reset UI to logged-out state
+        uploads = []; // Clear data model
+        renderCalendar(currentDate); // Re-render to clear view
+    } else if (apiError && apiError.code === 403 && apiError.errors?.[0]?.reason === 'quotaExceeded') {
+        console.log("DEBUG: YouTube API daily quota exceeded (403).");
+        // We don't need to log the user out, just inform them.
+        alert("The application has exceeded its daily YouTube API usage limit. Some data may be missing. Please try again tomorrow.");
+        // The app will display whatever data it managed to fetch before the quota was hit.
+    } else {
+        alert(`${userMessage} Please check the console for details.`);
+    }
+}
+
+/**
+ * Parses an ISO 8601 duration string (e.g., "PT1M30S") into seconds.
+ * @param {string} duration The ISO 8601 duration string.
+ * @returns {number} The total duration in seconds.
+ */
+function parseISO8601Duration(duration) {
+    const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+    const matches = duration.match(regex);
+    if (!matches) return 0;
+
+    const hours = parseInt(matches[1] || 0, 10);
+    const minutes = parseInt(matches[2] || 0, 10);
+    const seconds = parseInt(matches[3] || 0, 10);
+
+    return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+async function fetchUploadsForChannels(channelIds) {
+    console.log(`DEBUG: Fetching activities for ${channelIds.length} channels.`);
+
+    try {
+        // Step 1: Fetch all recent activities for all channels
+        const activityPromises = channelIds.map(id =>
+            gapi.client.youtube.activities.list({
+                part: 'snippet,contentDetails',
+                channelId: id,
+                maxResults: 15, // Get up to 15 recent items per channel
+            })
+        );
+        const activityResults = await Promise.allSettled(activityPromises);
+        const activityResponses = activityResults
+            .filter(r => r.status === 'fulfilled')
+            .map(r => r.value);
+
+        // Step 2: Collect all video IDs from 'upload' activities and keep the original activity items
+        const videoIds = [];
+        const activities = [];
+        activityResponses.forEach(response => {
+            if (response.result.items) {
+                response.result.items.forEach(item => {
+                    activities.push(item);
+                    if (item.snippet.type === 'upload' && item.contentDetails.upload) {
+                        videoIds.push(item.contentDetails.upload.videoId);
+                    }
+                });
+            }
+        });
+
+        // Step 3: Fetch detailed information for all collected video IDs in batches
+        const videoDetailsMap = new Map();
+        if (videoIds.length > 0) {
+            console.log(`DEBUG: Fetching details for ${videoIds.length} videos.`);
+            const videoDetailsPromises = [];
+            for (let i = 0; i < videoIds.length; i += 50) { // API limit is 50 IDs per request
+                const chunk = videoIds.slice(i, i + 50);
+                videoDetailsPromises.push(
+                    gapi.client.youtube.videos.list({
+                        part: 'contentDetails,liveStreamingDetails',
+                        id: chunk.join(','),
+                    })
+                );
+            }
+            const videoDetailResults = await Promise.allSettled(videoDetailsPromises);
+            const videoDetailsResponses = videoDetailResults
+                .filter(r => r.status === 'fulfilled')
+                .map(r => r.value);
+            videoDetailsResponses.forEach(response => {
+                if (response.result.items) {
+                    response.result.items.forEach(video => videoDetailsMap.set(video.id, video));
+                }
+            });
+        }
+
+        // Step 4: Process all activities with the detailed video info to categorize them accurately
+        const allUploads = activities.map(item => {
+            const publishedDate = new Date(item.snippet.publishedAt);
+            let itemType = null, itemId = null, itemUrl = null, itemTitle = escapeHTML(item.snippet.title), thumbnailUrl = item.snippet.thumbnails?.default?.url;
+
+            if (item.snippet.type === 'upload' && item.contentDetails.upload) {
+                itemId = item.contentDetails.upload.videoId;
+                const videoDetails = videoDetailsMap.get(itemId);
+
+                if (videoDetails) {
+                    if (videoDetails.liveStreamingDetails && (videoDetails.liveStreamingDetails.actualStartTime || videoDetails.liveStreamingDetails.scheduledStartTime)) {
+                        itemType = 'livestream';
+                    } else {
+                        const durationInSeconds = parseISO8601Duration(videoDetails.contentDetails.duration);
+                        // Heuristic: The official definition of a Short includes a vertical aspect ratio, which the API doesn't provide.
+                        // We use duration <= 61s as a strong and reliable proxy. It's safe to assume most videos this short are intended as Shorts.
+                        itemType = (durationInSeconds > 0 && durationInSeconds <= 61) ? 'short' : 'video';
+                    }
+                } else {
+                    itemType = 'video'; // Fallback if details are missing
+                }
+                itemUrl = (itemType === 'short') ? `https://www.youtube.com/shorts/${itemId}` : `https://www.youtube.com/watch?v=${itemId}`;
+            }
+            else if (item.snippet.type === 'bulletin' && item.contentDetails.bulletin) {
+                itemType = 'community';
+                itemId = item.id;
+                itemUrl = `https://www.youtube.com/channel/${item.snippet.channelId}/community?lb=${itemId}`;
+                itemTitle = escapeHTML(item.snippet.title || item.snippet.description?.split('\n')[0] || 'Community Post');
+            }
+
+            if (!itemType) return null;
+
+            return { id: itemId, url: itemUrl, title: itemTitle, channel: escapeHTML(item.snippet.channelTitle), date: publishedDate.getDate(), month: publishedDate.getMonth(), year: publishedDate.getFullYear(), type: itemType, thumbnail: thumbnailUrl, publishedAt: publishedDate };
+        }).filter(Boolean);
+
+        // Cache the newly fetched data
+        const cacheData = {
+            timestamp: new Date().getTime(),
+            uploads: allUploads
+        };
+        localStorage.setItem('youtube_calendar_cache', JSON.stringify(cacheData));
+        console.log("DEBUG: New data fetched and saved to cache.");
+
+        uploads = allUploads;
+        renderCalendar(currentDate);
+        loadingOverlay.style.display = 'none'; // Hide spinner after successful fetch and render
+    } catch (error) {
+        handleApiError(error, 'Failed to fetch video uploads.');
+    }
+}
 
 // Track which media types are currently active, checking local storage first
-const savedFilters = localStorage.getItem('calendarFilters');
-const activeFilters = savedFilters ? JSON.parse(savedFilters) : {
+const defaultFilters = {
     video: true,
     short: true,
-    community: true
+    community: true,
+    livestream: true
 };
+let activeFilters;
+try {
+    const savedFilters = localStorage.getItem('calendarFilters');
+    activeFilters = savedFilters ? JSON.parse(savedFilters) : defaultFilters;
+} catch (e) {
+    console.error("Could not parse calendarFilters from localStorage. Resetting.", e);
+    activeFilters = defaultFilters;
+}
 
-function openDayModal(dateString, uploads) {
+function openDayModal(dateString, uploads, totalUploadsForDay) {
     let contentHTML = `<h3>Uploads for ${dateString}</h3>`;
 
     if (uploads.length === 0) {
-        contentHTML += `<p>No content uploaded on this day.</p>`;
+        contentHTML += totalUploadsForDay > 0 ? `<p>No content matches the current filters for this day.</p>` : `<p>No content uploaded on this day.</p>`;
     } else {
         const typeLabels = {
             'video': 'Videos',
+            'livestream': 'Livestreams',
             'short': 'Shorts',
             'community': 'Community Posts'
         };
-        const typeOrder = ['video', 'short', 'community'];
+        const typeOrder = ['video', 'livestream', 'short', 'community'];
 
         contentHTML += `<div class="modal-upload-list">`;
-        
+
         typeOrder.forEach(type => {
             const groupUploads = uploads.filter(upload => upload.type === type);
             if (groupUploads.length > 0) {
+                // Sort each category chronologically
+                groupUploads.sort((a, b) => a.publishedAt - b.publishedAt);
+
                 contentHTML += `<h4 class="category-header" data-type="${type}"><span class="toggle-icon">▼</span> ${typeLabels[type]}</h4>`;
                 contentHTML += `<div class="category-content" id="content-${type}">`;
                 groupUploads.forEach(upload => {
+                    const formattedTime = upload.publishedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                    const isWatched = watchedIds.has(upload.id);
+                    const watchedClass = isWatched ? 'watched' : '';
                     contentHTML += `
-                        <div class="modal-upload-item ${upload.type}">
-                            <div style="margin-bottom: 5px;"><strong>${upload.channel}</strong>: ${upload.title}</div>
-                        </div>
+                        <a href="${upload.url}" target="_blank" rel="noopener noreferrer" class="modal-upload-item ${upload.type} ${watchedClass}" data-videoid="${upload.id}">
+                            ${upload.thumbnail ? `<img src="${upload.thumbnail}" class="modal-thumbnail" alt="">` : ''}
+                            <div class="modal-item-details">
+                                <div><strong>${upload.channel}</strong></div>
+                                <div>${upload.title}</div>
+                                <div class="upload-time">${formattedTime}</div>
+                            </div>
+                        </a>
                     `;
                 });
                 contentHTML += `</div>`;
@@ -67,6 +459,19 @@ function openDayModal(dateString, uploads) {
     modalContent.innerHTML = contentHTML;
     document.body.classList.add('modal-open');
 
+    // Add click listeners to mark items as watched
+    modalContent.querySelectorAll('.modal-upload-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent any other parent click handlers from firing
+            const videoId = e.currentTarget.getAttribute('data-videoid');
+            if (videoId) {
+                watchedIds.add(videoId);
+                localStorage.setItem('watchedVideoIds', JSON.stringify(Array.from(watchedIds)));
+                e.currentTarget.classList.add('watched');
+            }
+        });
+    });
+
     // Add event listeners for collapsible category headers
     const headers = modalContent.querySelectorAll('.category-header');
     headers.forEach(header => {
@@ -74,7 +479,7 @@ function openDayModal(dateString, uploads) {
             const type = header.getAttribute('data-type');
             const content = modalContent.querySelector(`#content-${type}`);
             const icon = header.querySelector('.toggle-icon');
-            
+
             content.classList.toggle('collapsed');
             icon.innerText = content.classList.contains('collapsed') ? '▶' : '▼';
         });
@@ -88,7 +493,7 @@ function closeModal() {
 function renderCalendar(date) {
     // Clear the calendar body before rendering the new month
     calendarBody.innerHTML = '';
-    
+
     const searchQuery = searchInput.value.toLowerCase();
 
     const year = date.getFullYear();
@@ -104,7 +509,7 @@ function renderCalendar(date) {
 
     // Calculate the number of days in the current month (Passing 0 as the day gets the last day of the previous month)
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
+
     // Calculate the day of the week the 1st of the month falls on (0 = Sun, 1 = Mon, etc.)
     const startDayOfWeek = new Date(year, month, 1).getDay();
 
@@ -118,7 +523,7 @@ function renderCalendar(date) {
     for (let i = 1; i <= daysInMonth; i++) {
         const dayCell = document.createElement('div');
         dayCell.classList.add('day');
-        
+
         const dayLabel = document.createElement('div');
         dayLabel.classList.add('day-number');
         dayLabel.innerText = i;
@@ -129,27 +534,54 @@ function renderCalendar(date) {
             dayCell.classList.add('current-day');
         }
 
-        // Filter the mock data to find uploads for this specific day, active media types, and search query
-        const dayUploads = mockUploads.filter(upload => {
-            const matchesDateAndType = upload.date === i && activeFilters[upload.type];
+        // First, get all uploads for this day, before applying other filters
+        const allUploadsForThisDay = uploads.filter(upload =>
+            upload.year === year && upload.month === month && upload.date === i
+        );
+
+        // Now, apply the search and type filters to get the list to display
+        const dayUploads = allUploadsForThisDay.filter(upload => {
+            const matchesType = activeFilters[upload.type];
             const matchesSearch = upload.title.toLowerCase().includes(searchQuery) || upload.channel.toLowerCase().includes(searchQuery);
-            return matchesDateAndType && matchesSearch;
+            return matchesType && matchesSearch;
         });
-        
+
+        // Sort all uploads for the day chronologically before displaying them
+        dayUploads.sort((a, b) => a.publishedAt - b.publishedAt);
+
         // Make the entire day cell clickable to open the day view modal
         dayCell.addEventListener('click', () => {
             const dateString = `${monthNames[month]} ${i}, ${year}`;
-            openDayModal(dateString, dayUploads);
+            openDayModal(dateString, dayUploads, allUploadsForThisDay.length);
         });
 
         // Limit the number of visually rendered items to prevent layout issues
         const MAX_ITEMS = 3;
         const uploadsToShow = dayUploads.slice(0, MAX_ITEMS);
-        
+
         uploadsToShow.forEach(upload => {
-            const videoItem = document.createElement('div');
+            const videoItem = document.createElement('a');
+            const isWatched = watchedIds.has(upload.id);
             videoItem.classList.add('yt-item', upload.type);
-            videoItem.innerText = `${upload.channel}: ${upload.title}`;
+            if (isWatched) {
+                videoItem.classList.add('watched');
+            }
+
+            videoItem.href = upload.url;
+            videoItem.target = '_blank';
+            videoItem.rel = 'noopener noreferrer';
+            videoItem.innerHTML = `
+                ${upload.thumbnail ? `<img src="${upload.thumbnail}" class="yt-item-thumbnail" alt="">` : ''}
+                <span class="yt-item-title">${upload.channel}: ${upload.title}</span>
+            `;
+
+            videoItem.addEventListener('click', (e) => {
+                e.stopPropagation(); // IMPORTANT: This stops the click from also triggering the modal for the day cell
+                watchedIds.add(upload.id);
+                localStorage.setItem('watchedVideoIds', JSON.stringify(Array.from(watchedIds)));
+                videoItem.classList.add('watched');
+            });
+
             dayCell.appendChild(videoItem);
         });
 
@@ -188,6 +620,15 @@ todayBtn.addEventListener('click', () => {
     renderCalendar(currentDate);
 });
 
+forceRefreshBtn.addEventListener('click', () => {
+    // Ensure user is signed in before allowing a refresh
+    if (gapi.client.getToken() !== null) {
+        console.log("DEBUG: Force refresh clicked. Clearing cache and fetching new data.");
+        localStorage.removeItem('youtube_calendar_cache');
+        fetchSubscriptions();
+    }
+});
+
 // Check local storage for dark mode preference on load
 if (localStorage.getItem('darkMode') === 'enabled') {
     document.body.classList.add('dark-mode');
@@ -212,12 +653,22 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.body.classList.contains('modal-open')) {
         closeModal();
     }
+    // Navigate months with arrow keys (only when modal is closed and no input is focused)
+    if (!document.body.classList.contains('modal-open') && document.activeElement?.tagName !== 'INPUT') {
+        if (e.key === 'ArrowLeft') {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar(currentDate);
+        } else if (e.key === 'ArrowRight') {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar(currentDate);
+        }
+    }
 });
 
 // Setup click listeners and initial visual state for media type filtering
 document.querySelectorAll('.legend-item').forEach(item => {
     const type = item.getAttribute('data-type');
-    
+
     // Set initial visual state based on loaded filters
     if (type && !activeFilters[type]) {
         item.classList.add('inactive');
@@ -233,9 +684,13 @@ document.querySelectorAll('.legend-item').forEach(item => {
     });
 });
 
-// Re-render calendar when user types in the search bar
+// Re-render calendar when user types in the search bar (debounced to prevent jank)
+let searchDebounceTimer;
 searchInput.addEventListener('input', () => {
-    renderCalendar(currentDate);
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+        renderCalendar(currentDate);
+    }, 300);
 });
 
 // Initial render
