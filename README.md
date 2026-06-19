@@ -2,8 +2,6 @@
 
 A web-based calendar application that authenticates with your YouTube account and displays recent uploads from your subscribed channels in an interactive, filterable monthly calendar.
 
-![App Screenshot](path/to/your/screenshot.png) <!-- Replace with a path to your screenshot -->
-
 ## Features
 - **Google Authentication:** Securely log in with your YouTube account using OAuth 2.0.
 - **Dynamic Calendar:** View all recent content from your subscriptions on a monthly calendar.
