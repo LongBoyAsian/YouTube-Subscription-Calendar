@@ -29,14 +29,59 @@ let gapiInited = false;
 let gisInited = false;
 let tokenClient;
 let uploads = []; // This will hold the real data from the API
-let watchedIds;
-try {
-    // This is now wrapped in a try-catch to prevent errors from malformed data in localStorage
-    watchedIds = new Set(JSON.parse(localStorage.getItem('watchedVideoIds')) || []);
-} catch (e) {
-    console.error("Could not parse watchedVideoIds from localStorage. Resetting.", e);
-    watchedIds = new Set();
+// --- Watch History with Timestamps & Auto-Pruning ---
+const WATCH_HISTORY_MAX_AGE_DAYS = 90;
+let watchedData; // Object: { videoId: timestamp, ... }
+let watchedIds;  // Set for fast .has() lookups
+
+function loadWatchHistory() {
+    try {
+        const raw = JSON.parse(localStorage.getItem('watchedVideoIds'));
+        if (!raw) {
+            return { data: {}, ids: new Set() };
+        }
+        // Backward compatibility: old format was a flat array ["id1", "id2", ...]
+        if (Array.isArray(raw)) {
+            const now = Date.now();
+            const migrated = {};
+            raw.forEach(id => { migrated[id] = now; });
+            console.log(`DEBUG: Migrated ${raw.length} watch history entries from array to timestamped format.`);
+            return { data: migrated, ids: new Set(raw) };
+        }
+        // New format: { id: timestamp, ... } — prune old entries
+        const cutoff = Date.now() - (WATCH_HISTORY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+        const pruned = {};
+        let prunedCount = 0;
+        for (const [id, ts] of Object.entries(raw)) {
+            if (ts >= cutoff) {
+                pruned[id] = ts;
+            } else {
+                prunedCount++;
+            }
+        }
+        if (prunedCount > 0) {
+            console.log(`DEBUG: Pruned ${prunedCount} watch history entries older than ${WATCH_HISTORY_MAX_AGE_DAYS} days.`);
+        }
+        return { data: pruned, ids: new Set(Object.keys(pruned)) };
+    } catch (e) {
+        console.error("Could not parse watchedVideoIds from localStorage. Resetting.", e);
+        return { data: {}, ids: new Set() };
+    }
 }
+
+function saveWatchHistory() {
+    localStorage.setItem('watchedVideoIds', JSON.stringify(watchedData));
+}
+
+function markAsWatched(videoId) {
+    if (!videoId) return;
+    watchedData[videoId] = Date.now();
+    watchedIds.add(videoId);
+    saveWatchHistory();
+}
+
+({ data: watchedData, ids: watchedIds } = loadWatchHistory());
+saveWatchHistory(); // Persist the pruned/migrated version immediately
 
 // The permissions your app is requesting
 const SCOPES = 'https://www.googleapis.com/auth/youtube.readonly';
@@ -102,6 +147,7 @@ function handleSignoutClick() {
             localStorage.removeItem('youtube_access_token');
             localStorage.removeItem('youtube_calendar_cache');
             localStorage.removeItem('watchedVideoIds');
+            watchedData = {};
             watchedIds.clear();
             uploads = []; // Clear data on sign out
             updateAuthUI();
@@ -412,7 +458,15 @@ try {
 }
 
 function openDayModal(dateString, uploads, totalUploadsForDay) {
-    let contentHTML = `<h3>Uploads for ${dateString}</h3>`;
+    let contentHTML = `<div class="modal-header-row"><h3>Uploads for ${dateString}</h3>`;
+
+    // Add "Mark All as Watched" button if there are unwatched uploads
+    const unwatchedUploads = uploads.filter(u => !watchedIds.has(u.id));
+    if (uploads.length > 0) {
+        const allWatched = unwatchedUploads.length === 0;
+        contentHTML += `<button class="mark-all-watched-btn${allWatched ? ' all-done' : ''}" id="mark-all-day-btn" ${allWatched ? 'disabled' : ''}>${allWatched ? '✓ All Watched' : '✓ Mark All as Watched'}</button>`;
+    }
+    contentHTML += `</div>`;
 
     if (uploads.length === 0) {
         contentHTML += totalUploadsForDay > 0 ? `<p>No content matches the current filters for this day.</p>` : `<p>No content uploaded on this day.</p>`;
@@ -433,7 +487,13 @@ function openDayModal(dateString, uploads, totalUploadsForDay) {
                 // Sort each category chronologically
                 groupUploads.sort((a, b) => a.publishedAt - b.publishedAt);
 
+                const unwatchedInGroup = groupUploads.filter(u => !watchedIds.has(u.id));
+                const groupAllWatched = unwatchedInGroup.length === 0;
+
+                contentHTML += `<div class="category-header-row">`;
                 contentHTML += `<h4 class="category-header" data-type="${type}"><span class="toggle-icon">▼</span> ${typeLabels[type]}</h4>`;
+                contentHTML += `<button class="mark-category-watched-btn${groupAllWatched ? ' all-done' : ''}" data-type="${type}" ${groupAllWatched ? 'disabled' : ''}>${groupAllWatched ? '✓ Done' : '✓ All'}</button>`;
+                contentHTML += `</div>`;
                 contentHTML += `<div class="category-content" id="content-${type}">`;
                 groupUploads.forEach(upload => {
                     const formattedTime = upload.publishedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
@@ -459,16 +519,60 @@ function openDayModal(dateString, uploads, totalUploadsForDay) {
     modalContent.innerHTML = contentHTML;
     document.body.classList.add('modal-open');
 
-    // Add click listeners to mark items as watched
+    // --- "Mark All as Watched" for the entire day ---
+    const markAllDayBtn = document.getElementById('mark-all-day-btn');
+    if (markAllDayBtn) {
+        markAllDayBtn.addEventListener('click', () => {
+            uploads.forEach(upload => markAsWatched(upload.id));
+            // Visually update all items in the modal
+            modalContent.querySelectorAll('.modal-upload-item').forEach(el => el.classList.add('watched'));
+            // Update the button itself
+            markAllDayBtn.textContent = '✓ All Watched';
+            markAllDayBtn.disabled = true;
+            markAllDayBtn.classList.add('all-done');
+            // Update per-category buttons too
+            modalContent.querySelectorAll('.mark-category-watched-btn').forEach(btn => {
+                btn.textContent = '✓ Done';
+                btn.disabled = true;
+                btn.classList.add('all-done');
+            });
+            // Re-render calendar in background to reflect watched state
+            renderCalendar(currentDate);
+        });
+    }
+
+    // --- "✓ All" per category ---
+    modalContent.querySelectorAll('.mark-category-watched-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const type = btn.getAttribute('data-type');
+            const categoryItems = modalContent.querySelectorAll(`#content-${type} .modal-upload-item`);
+            categoryItems.forEach(el => {
+                const videoId = el.getAttribute('data-videoid');
+                markAsWatched(videoId);
+                el.classList.add('watched');
+            });
+            btn.textContent = '✓ Done';
+            btn.disabled = true;
+            btn.classList.add('all-done');
+            // Check if all categories are now fully watched
+            const anyUnwatched = uploads.some(u => !watchedIds.has(u.id));
+            if (!anyUnwatched && markAllDayBtn) {
+                markAllDayBtn.textContent = '✓ All Watched';
+                markAllDayBtn.disabled = true;
+                markAllDayBtn.classList.add('all-done');
+            }
+            renderCalendar(currentDate);
+        });
+    });
+
+    // Add click listeners to mark individual items as watched
     modalContent.querySelectorAll('.modal-upload-item').forEach(item => {
         item.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent any other parent click handlers from firing
+            e.stopPropagation();
             const videoId = e.currentTarget.getAttribute('data-videoid');
-            if (videoId) {
-                watchedIds.add(videoId);
-                localStorage.setItem('watchedVideoIds', JSON.stringify(Array.from(watchedIds)));
-                e.currentTarget.classList.add('watched');
-            }
+            markAsWatched(videoId);
+            e.currentTarget.classList.add('watched');
         });
     });
 
@@ -577,8 +681,7 @@ function renderCalendar(date) {
 
             videoItem.addEventListener('click', (e) => {
                 e.stopPropagation(); // IMPORTANT: This stops the click from also triggering the modal for the day cell
-                watchedIds.add(upload.id);
-                localStorage.setItem('watchedVideoIds', JSON.stringify(Array.from(watchedIds)));
+                markAsWatched(upload.id);
                 videoItem.classList.add('watched');
             });
 

@@ -405,6 +405,90 @@ input:checked+.slider:before {
     display: none;
 }
 
+/* Modal header row: title + Mark All button */
+.modal-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.modal-header-row h3 {
+    margin: 0;
+}
+
+/* Category header row: collapsible header + per-category ✓ All button */
+.category-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.category-header-row h4 {
+    margin: 10px 0 5px;
+}
+
+/* Mark All as Watched button (day-level) */
+.mark-all-watched-btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85em;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.2s, opacity 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.mark-all-watched-btn:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: scale(1.02);
+}
+
+.mark-all-watched-btn:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.mark-all-watched-btn.all-done {
+    background-color: #10b981;
+    cursor: default;
+    opacity: 0.8;
+}
+
+/* Per-category ✓ All button */
+.mark-category-watched-btn {
+    background: none;
+    border: 1px solid #94a3b8;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.mark-category-watched-btn:hover:not(:disabled) {
+    background-color: #e2e8f0;
+    border-color: #64748b;
+    color: #334155;
+}
+
+.mark-category-watched-btn.all-done {
+    background-color: #d1fae5;
+    border-color: #6ee7b7;
+    color: #065f46;
+    cursor: default;
+    opacity: 0.8;
+}
+
 #modal-content p {
     margin: 5px 0;
     color: #666;
@@ -665,4 +749,21 @@ body.dark-mode .loading-overlay {
 body.dark-mode .spinner {
     border-color: #444;
     border-top-color: #3b82f6;
+}
+
+body.dark-mode .mark-category-watched-btn {
+    border-color: #555;
+    color: #94a3b8;
+}
+
+body.dark-mode .mark-category-watched-btn:hover:not(:disabled) {
+    background-color: #333;
+    border-color: #777;
+    color: #e0e0e0;
+}
+
+body.dark-mode .mark-category-watched-btn.all-done {
+    background-color: #064e3b;
+    border-color: #065f46;
+    color: #6ee7b7;
 }
